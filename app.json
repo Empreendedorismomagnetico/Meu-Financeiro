@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "Meu Financeiro",
@@ -19,7 +20,6 @@
       }
     },
     "androidNavigationBar": {
-      "visible": "visible",
       "backgroundColor": "#FFFFFF",
       "barStyle": "dark-content"
     }
