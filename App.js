@@ -218,12 +218,31 @@ const s=StyleSheet.create({
   scroll:{flex:1},
   conteudo:{paddingBottom:12},
   adicionar:{alignItems:"center",paddingTop:24,paddingBottom:50},
-  maisCirculo:{width:148,height:148,borderRadius:74,backgroundColor:"#111",alignItems:"center",justifyContent:"center"},
-  maisTxt:{color:"#fff",fontSize:78,lineHeight:88,fontWeight:"300",marginTop:-5},
+  maisCirculo: {
+  width: 115,
+  height: 115,
+  borderRadius: 58,
+  backgroundColor: "#111",
+  alignItems: "center",
+  justifyContent: "center"
+},
+
+maisTxt: {
+  color: "#fff",
+  fontSize: 55,
+  lineHeight: 65,
+  fontWeight: "300",
+  marginTop: -5
+},
   adicionarTexto:{color:"#666",fontSize:23,marginTop:20},
   resumo:{backgroundColor:"#111",borderRadius:25,minHeight:247,alignItems:"center",justifyContent:"center",padding:22},
   rotulo:{color:"#c8c8c8",fontSize:19,fontWeight:"500"},
-  total:{color:"#fff",fontSize:54,fontWeight:"800",marginTop:18},
+  total: {
+  color: "#fff",
+  fontSize: 38,
+  fontWeight: "800",
+  marginTop: 14
+},
   cabLista:{marginTop:60,marginBottom:15,paddingLeft:8},
   tituloLista:{fontSize:29,fontWeight:"800",color:"#171717"},
   lista:{borderWidth:1,borderColor:"#eee",borderRadius:17,paddingHorizontal:15},
