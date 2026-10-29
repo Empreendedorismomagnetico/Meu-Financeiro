@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Meu Financeiro",
+    "slug": "meu-financeiro",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "com.meufinanceiro.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    }
+  }
+}
