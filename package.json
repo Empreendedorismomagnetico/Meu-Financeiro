@@ -1,3 +1,4 @@
+
 {
   "name": "meu-financeiro",
   "version": "1.0.0",
@@ -16,6 +17,7 @@
     "react-native-safe-area-context": "5.6.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.25.2"
+    "@babel/core": "^7.25.2",
+    "babel-preset-expo": "~54.0.10"
   }
 }
