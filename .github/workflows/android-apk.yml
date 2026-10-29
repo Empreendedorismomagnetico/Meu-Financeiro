@@ -1,0 +1,44 @@
+
+name: Gerar APK Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Validar configuração Expo
+        run: npx expo-doctor
+
+      - name: Gerar projeto Android
+        run: npx expo prebuild --platform android --non-interactive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compilar APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meu-financeiro-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          
