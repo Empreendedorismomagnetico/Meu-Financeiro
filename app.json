@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Meu Financeiro",
+    "slug": "meu-financeiro",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "package": "com.meufinanceiro.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "androidNavigationBar": {
+      "visible": "visible",
+      "backgroundColor": "#FFFFFF",
+      "barStyle": "dark-content"
+    }
+  }
+}
