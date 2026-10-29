@@ -1,14 +1,15 @@
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform,
-  Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput,
-  View
+  Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal,
+  Platform, Pressable, ScrollView, StatusBar, StyleSheet,
+  Text, TextInput, View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const KEY = "@meu_financeiro_v1";
+const ABAS = ["Contas", "Receitas", "Dashboard", "Histórico"];
 
 const cents = v => Number(String(v || "").replace(/\D/g, "") || 0);
 
@@ -22,29 +23,109 @@ const real = v => (Number(v || 0) / 100).toLocaleString("pt-BR", {
   currency: "BRL"
 });
 
+const soma = lista =>
+  (lista || []).reduce((total, item) => total + Number(item.valor || 0), 0);
+
+function chaveMes(data = new Date()) {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function nomeMes(chave) {
+  const [ano, mes] = chave.split("-");
+  const data = new Date(Number(ano), Number(mes) - 1, 1, 12);
+  const texto = data.toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric"
+  });
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function chaveDoRegistro(registro) {
+  if (registro.mesKey) return registro.mesKey;
+
+  if (registro.finalizadaEm) {
+    return chaveMes(new Date(registro.finalizadaEm));
+  }
+
+  if (registro.dataFinalizacao) {
+    const partes = registro.dataFinalizacao.split("/");
+    if (partes.length === 3) {
+      return `${partes[2]}-${partes[1].padStart(2, "0")}`;
+    }
+  }
+
+  return chaveMes();
+}
+
+function normalizarHistorico(lista) {
+  const meses = {};
+
+  (Array.isArray(lista) ? lista : []).forEach(registro => {
+    const chave = chaveDoRegistro(registro);
+
+    if (!meses[chave]) {
+      meses[chave] = {
+        id: chave,
+        mesKey: chave,
+        mesLabel: nomeMes(chave),
+        contas: [],
+        receitas: [],
+        contasFinalizadas: false,
+        receitasFinalizadas: false
+      };
+    }
+
+    const mes = meses[chave];
+
+    if (Array.isArray(registro.contas)) {
+      mes.contas.push(...registro.contas);
+      mes.contasFinalizadas = true;
+    }
+
+    if (Array.isArray(registro.receitas)) {
+      mes.receitas.push(...registro.receitas);
+      mes.receitasFinalizadas = true;
+    }
+  });
+
+  return Object.values(meses).sort((a, b) =>
+    b.mesKey.localeCompare(a.mesKey)
+  );
+}
+
 function Financeiro() {
   const [contas, setContas] = useState([]);
+  const [receitas, setReceitas] = useState([]);
   const [historico, setHistorico] = useState([]);
   const [pronto, setPronto] = useState(false);
+
+  const [aba, setAba] = useState(0);
+  const [larguraPagina, setLarguraPagina] = useState(0);
+  const pagerRef = useRef(null);
+
   const [modal, setModal] = useState(false);
+  const [tipoModal, setTipoModal] = useState("conta");
   const [idEdicao, setIdEdicao] = useState(null);
   const [nome, setNome] = useState("");
   const [valor, setValor] = useState("");
   const [menu, setMenu] = useState(false);
 
-  const total = useMemo(
-    () => contas.reduce((s, c) => s + Number(c.valor || 0), 0),
-    [contas]
-  );
+  const [mesExpandido, setMesExpandido] = useState(null);
+
+  const totalContas = useMemo(() => soma(contas), [contas]);
+  const totalReceitas = useMemo(() => soma(receitas), [receitas]);
 
   useEffect(() => {
     (async () => {
       try {
-        const s = await AsyncStorage.getItem(KEY);
-        if (s) {
-          const p = JSON.parse(s);
-          setContas(Array.isArray(p.contas) ? p.contas : []);
-          setHistorico(Array.isArray(p.historico) ? p.historico : []);
+        const salvo = await AsyncStorage.getItem(KEY);
+
+        if (salvo) {
+          const dados = JSON.parse(salvo);
+
+          setContas(Array.isArray(dados.contas) ? dados.contas : []);
+          setReceitas(Array.isArray(dados.receitas) ? dados.receitas : []);
+          setHistorico(normalizarHistorico(dados.historico));
         }
       } catch (e) {
         Alert.alert("Aviso", "Não foi possível carregar os dados salvos.");
@@ -56,12 +137,36 @@ function Financeiro() {
 
   useEffect(() => {
     if (pronto) {
-      AsyncStorage.setItem(KEY, JSON.stringify({ contas, historico }))
-        .catch(() => Alert.alert("Erro", "Não foi possível salvar os dados."));
+      AsyncStorage.setItem(
+        KEY,
+        JSON.stringify({ contas, receitas, historico })
+      ).catch(() => Alert.alert("Erro", "Não foi possível salvar os dados."));
     }
-  }, [contas, historico, pronto]);
+  }, [contas, receitas, historico, pronto]);
 
-  function novo() {
+  function navegar(indice) {
+    setAba(indice);
+
+    if (larguraPagina > 0) {
+      pagerRef.current?.scrollTo({
+        x: indice * larguraPagina,
+        animated: true
+      });
+    }
+  }
+
+  function aoDeslizar(evento) {
+    if (!larguraPagina) return;
+
+    const indice = Math.round(
+      evento.nativeEvent.contentOffset.x / larguraPagina
+    );
+
+    setAba(Math.max(0, Math.min(ABAS.length - 1, indice)));
+  }
+
+  function novo(tipo) {
+    setTipoModal(tipo);
     setIdEdicao(null);
     setNome("");
     setValor("");
@@ -69,10 +174,11 @@ function Financeiro() {
     setModal(true);
   }
 
-  function editar(c) {
-    setIdEdicao(c.id);
-    setNome(c.nome);
-    setValor(String(c.valor));
+  function editar(item, tipo) {
+    setTipoModal(tipo);
+    setIdEdicao(item.id);
+    setNome(item.nome);
+    setValor(String(item.valor));
     setMenu(false);
     setModal(true);
   }
@@ -86,9 +192,11 @@ function Financeiro() {
   function salvar() {
     const n = nome.trim();
     const v = cents(valor);
+    const ehConta = tipoModal === "conta";
+    const atualizar = ehConta ? setContas : setReceitas;
 
     if (!n) {
-      return Alert.alert("Falta o nome", "Digite o nome da conta.");
+      return Alert.alert("Falta o nome", "Digite um nome para o lançamento.");
     }
 
     if (v <= 0) {
@@ -96,13 +204,15 @@ function Financeiro() {
     }
 
     if (idEdicao) {
-      setContas(xs => xs.map(c =>
-        c.id === idEdicao ? { id: c.id, nome: n, valor: v } : c
+      atualizar(lista => lista.map(item =>
+        item.id === idEdicao
+          ? { id: item.id, nome: n, valor: v }
+          : item
       ));
     } else {
-      setContas(xs => [
+      atualizar(lista => [
         { id: `${Date.now()}-${Math.random()}`, nome: n, valor: v },
-        ...xs
+        ...lista
       ]);
     }
 
@@ -112,16 +222,20 @@ function Financeiro() {
   function excluir() {
     setMenu(false);
 
+    const ehConta = tipoModal === "conta";
+    const atualizar = ehConta ? setContas : setReceitas;
+    const nomeTipo = ehConta ? "conta" : "receita";
+
     Alert.alert(
-      "Excluir conta?",
-      "Essa conta será removida da lista atual.",
+      `Excluir ${nomeTipo}?`,
+      "Esse lançamento será removido da lista atual.",
       [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Excluir",
           style: "destructive",
           onPress: () => {
-            setContas(xs => xs.filter(c => c.id !== idEdicao));
+            atualizar(lista => lista.filter(item => item.id !== idEdicao));
             fechar();
           }
         }
@@ -129,45 +243,84 @@ function Financeiro() {
     );
   }
 
-  function finalizar() {
-    if (!contas.length) {
+  function finalizarLista(tipo) {
+    const ehConta = tipo === "conta";
+    const lista = ehConta ? contas : receitas;
+    const atualizar = ehConta ? setContas : setReceitas;
+    const titulo = ehConta ? "contas" : "receitas";
+
+    if (!lista.length) {
       return Alert.alert(
         "Lista vazia",
-        "Adicione pelo menos uma conta antes de finalizar."
+        `Adicione pelo menos uma ${ehConta ? "conta" : "receita"} antes de finalizar.`
       );
     }
 
     Alert.alert(
       "Finalizar lista?",
-      "As contas sairão da tela principal, mas ficarão salvas para o futuro Histórico.",
+      `Os lançamentos de ${titulo} serão guardados no Histórico do mês atual.`,
       [
         { text: "Voltar", style: "cancel" },
         {
           text: "Finalizar",
           onPress: () => {
-            setHistorico(xs => [
-              {
-                id: String(Date.now()),
-                dataFinalizacao: new Date().toLocaleDateString("pt-BR"),
-                finalizadaEm: new Date().toISOString(),
-                total,
-                contas: contas.map(c => ({
-                  id: c.id,
-                  nome: c.nome,
-                  valor: c.valor
-                }))
-              },
-              ...xs
-            ]);
-            setContas([]);
+            const agora = new Date();
+            const mesKey = chaveMes(agora);
+            const novosItens = lista.map(item => ({
+              id: item.id,
+              nome: item.nome,
+              valor: Number(item.valor)
+            }));
+
+            setHistorico(anteriores => {
+              const existente = anteriores.find(m => m.mesKey === mesKey);
+
+              const base = existente || {
+                id: mesKey,
+                mesKey,
+                mesLabel: nomeMes(mesKey),
+                contas: [],
+                receitas: [],
+                contasFinalizadas: false,
+                receitasFinalizadas: false
+              };
+
+              const atualizado = ehConta
+                ? {
+                    ...base,
+                    contas: [...(base.contas || []), ...novosItens],
+                    contasFinalizadas: true
+                  }
+                : {
+                    ...base,
+                    receitas: [...(base.receitas || []), ...novosItens],
+                    receitasFinalizadas: true
+                  };
+
+              return [
+                atualizado,
+                ...anteriores.filter(m => m.mesKey !== mesKey)
+              ].sort((a, b) => b.mesKey.localeCompare(a.mesKey));
+            });
+
+            atualizar([]);
+            Alert.alert("Lista finalizada", "Os dados foram guardados no Histórico.");
           }
         }
       ]
     );
   }
 
-  const linha = ({ item }) => (
-    <Pressable style={s.linha} onPress={() => editar(item)}>
+  function alternarMes(chave) {
+    setMesExpandido(atual => atual === chave ? null : chave);
+  }
+
+  const linha = (item, tipo) => (
+    <Pressable
+      key={item.id}
+      style={s.linha}
+      onPress={() => editar(item, tipo)}
+    >
       <View style={{ flex: 1 }}>
         <Text style={s.nomeConta}>{item.nome}</Text>
       </View>
@@ -175,6 +328,168 @@ function Financeiro() {
       <Text style={s.seta}>›</Text>
     </Pressable>
   );
+
+  function renderLista(tipo) {
+    const ehConta = tipo === "conta";
+    const lista = ehConta ? contas : receitas;
+    const total = ehConta ? totalContas : totalReceitas;
+    const titulo = ehConta ? "Minhas contas" : "Minhas receitas";
+    const botao = ehConta ? "Adicionar conta" : "Adicionar receita";
+    const rotulo = ehConta ? "TOTAL DAS CONTAS" : "TOTAL DAS RECEITAS";
+
+    return (
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.conteudo}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Pressable style={s.adicionar} onPress={() => novo(tipo)}>
+          <View style={s.maisCirculo}>
+            <Text style={s.maisTxt}>＋</Text>
+          </View>
+          <Text style={s.adicionarTexto}>{botao}</Text>
+        </Pressable>
+
+        <View style={s.resumo}>
+          <Text style={s.rotulo}>{rotulo}</Text>
+          <Text style={s.total} numberOfLines={1} adjustsFontSizeToFit>
+            {real(total)}
+          </Text>
+        </View>
+
+        <View style={s.cabLista}>
+          <Text style={s.tituloLista}>{titulo}</Text>
+        </View>
+
+        {lista.length > 0 ? (
+          <View style={s.lista}>
+            {lista.map((item, index) => (
+              <React.Fragment key={item.id}>
+                {linha(item, tipo)}
+                {index < lista.length - 1 && <View style={s.separador} />}
+              </React.Fragment>
+            ))}
+          </View>
+        ) : (
+          <Text style={s.vazioDesc}>
+            {ehConta
+              ? "As contas adicionadas aparecerão aqui."
+              : "As receitas adicionadas aparecerão aqui."}
+          </Text>
+        )}
+
+        {lista.length > 0 && (
+          <Pressable
+            style={s.finalizar}
+            onPress={() => finalizarLista(tipo)}
+          >
+            <Text style={s.finalizarTxt}>Finalizar lista</Text>
+          </Pressable>
+        )}
+
+        <View style={{ height: 12 }} />
+      </ScrollView>
+    );
+  }
+
+  function renderHistorico() {
+    return (
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.conteudoHistorico}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={s.tituloLista}>Histórico mensal</Text>
+        <Text style={s.subHistorico}>
+          Consulte suas receitas e contas finalizadas.
+        </Text>
+
+        {historico.length === 0 ? (
+          <Text style={s.vazioDesc}>
+            Seus meses finalizados aparecerão aqui.
+          </Text>
+        ) : (
+          historico.map(mes => {
+            const totalEntrada = soma(mes.receitas);
+            const totalSaida = soma(mes.contas);
+            const saldo = totalEntrada - totalSaida;
+            const expandido = mesExpandido === mes.mesKey;
+
+            return (
+              <View key={mes.mesKey} style={s.cartaoMes}>
+                <Pressable
+                  style={s.topMes}
+                  onPress={() => alternarMes(mes.mesKey)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.nomeMes}>{mes.mesLabel}</Text>
+                    <Text style={s.resumoMes}>
+                      Entradas {real(totalEntrada)}
+                    </Text>
+                    <Text style={s.resumoMes}>
+                      Despesas {real(totalSaida)}
+                    </Text>
+                  </View>
+                  <Text style={s.setaMes}>{expandido ? "⌃" : "⌄"}</Text>
+                </Pressable>
+
+                {expandido && (
+                  <View style={s.detalheMes}>
+                    <View style={s.saldoBox}>
+                      <Text style={s.rotuloSaldo}>SALDO DO MÊS</Text>
+                      <Text style={s.valorSaldo}>{real(saldo)}</Text>
+                    </View>
+
+                    <Text style={s.subtituloHistorico}>Receitas</Text>
+                    {mes.receitas?.length ? (
+                      mes.receitas.map(item => (
+                        <View style={s.linhaHistorico} key={item.id}>
+                          <Text style={s.nomeHistorico}>{item.nome}</Text>
+                          <Text style={s.valorHistorico}>{real(item.valor)}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={s.semLancamento}>Nenhuma receita finalizada.</Text>
+                    )}
+
+                    <View style={s.separadorHistorico} />
+
+                    <Text style={s.subtituloHistorico}>Contas e despesas</Text>
+                    {mes.contas?.length ? (
+                      mes.contas.map(item => (
+                        <View style={s.linhaHistorico} key={item.id}>
+                          <Text style={s.nomeHistorico}>{item.nome}</Text>
+                          <Text style={s.valorHistorico}>{real(item.valor)}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={s.semLancamento}>Nenhuma conta finalizada.</Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+    );
+  }
+
+  function renderDashboard() {
+    return (
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.conteudo}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={s.tituloLista}>Dashboard</Text>
+        <Text style={s.subHistorico}>
+          Sua visão geral financeira ficará disponível aqui.
+        </Text>
+      </ScrollView>
+    );
+  }
 
   if (!pronto) {
     return (
@@ -208,63 +523,55 @@ function Financeiro() {
         </View>
 
         <View style={s.navegacao}>
-          {["Contas", "Receita", "Dashboard", "Histórico"].map((item, i) => (
-            <View key={item} style={[s.aba, i === 0 && s.abaAtiva]}>
-              <Text style={[s.abaTexto, i === 0 && s.abaTextoAtivo]}>
+          {ABAS.map((item, i) => (
+            <Pressable
+              key={item}
+              style={[s.aba, aba === i && s.abaAtiva]}
+              onPress={() => navegar(i)}
+            >
+              <Text style={[s.abaTexto, aba === i && s.abaTextoAtivo]}>
                 {item}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
 
-        <ScrollView
-          style={s.scroll}
-          contentContainerStyle={s.conteudo}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
+        <View
+          style={{ flex: 1 }}
+          onLayout={e => {
+            const largura = e.nativeEvent.layout.width;
+            setLarguraPagina(largura);
+          }}
         >
-          <Pressable style={s.adicionar} onPress={novo}>
-            <View style={s.maisCirculo}>
-              <Text style={s.maisTxt}>＋</Text>
-            </View>
-            <Text style={s.adicionarTexto}>Adicionar conta</Text>
-          </Pressable>
+          {larguraPagina > 0 && (
+            <ScrollView
+              ref={pagerRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={aoDeslizar}
+              scrollEventThrottle={16}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
+              <View style={{ width: larguraPagina, flex: 1 }}>
+                {renderLista("conta")}
+              </View>
 
-          <View style={s.resumo}>
-            <Text style={s.rotulo}>TOTAL DAS CONTAS</Text>
-            <Text style={s.total} numberOfLines={1} adjustsFontSizeToFit>
-              {real(total)}
-            </Text>
-          </View>
+              <View style={{ width: larguraPagina, flex: 1 }}>
+                {renderLista("receita")}
+              </View>
 
-          <View style={s.cabLista}>
-            <Text style={s.tituloLista}>Minhas contas</Text>
-          </View>
+              <View style={{ width: larguraPagina, flex: 1 }}>
+                {renderDashboard()}
+              </View>
 
-          {contas.length > 0 ? (
-            <View style={s.lista}>
-              <FlatList
-                data={contas}
-                renderItem={linha}
-                keyExtractor={c => c.id}
-                scrollEnabled={false}
-                ItemSeparatorComponent={() => <View style={s.separador} />}
-              />
-            </View>
-          ) : (
-            <Text style={s.vazioDesc}>
-              As contas adicionadas aparecerão aqui.
-            </Text>
+              <View style={{ width: larguraPagina, flex: 1 }}>
+                {renderHistorico()}
+              </View>
+            </ScrollView>
           )}
-
-          {contas.length > 0 && (
-            <Pressable style={s.finalizar} onPress={finalizar}>
-              <Text style={s.finalizarTxt}>Finalizar lista</Text>
-            </Pressable>
-          )}
-
-          <View style={{ height: 12 }} />
-        </ScrollView>
+        </View>
       </View>
 
       <Modal
@@ -275,10 +582,7 @@ function Financeiro() {
         onRequestClose={fechar}
       >
         <View style={s.fundo}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={fechar}
-          />
+          <Pressable style={StyleSheet.absoluteFill} onPress={fechar} />
 
           <KeyboardAvoidingView
             style={s.modalArea}
@@ -294,10 +598,12 @@ function Financeiro() {
                 <View style={s.topModal}>
                   <View>
                     <Text style={s.modalTitulo}>
-                      {idEdicao ? "Editar conta" : "Adicionar conta"}
+                      {idEdicao
+                        ? `Editar ${tipoModal === "conta" ? "conta" : "receita"}`
+                        : tipoModal === "conta" ? "Adicionar conta" : "Adicionar receita"}
                     </Text>
                     <Text style={s.modalSub}>
-                      Preencha os dados da conta
+                      Preencha os dados do lançamento
                     </Text>
                   </View>
 
@@ -318,17 +624,25 @@ function Financeiro() {
                 {menu && (
                   <View style={s.menu}>
                     <Pressable onPress={excluir} style={s.menuItem}>
-                      <Text style={s.excluirTxt}>Excluir conta</Text>
+                      <Text style={s.excluirTxt}>
+                        {tipoModal === "conta" ? "Excluir conta" : "Excluir receita"}
+                      </Text>
                     </Pressable>
                   </View>
                 )}
 
-                <Text style={s.label}>Nome da conta</Text>
+                <Text style={s.label}>
+                  {tipoModal === "conta" ? "Nome da conta" : "Nome da receita"}
+                </Text>
                 <TextInput
                   style={s.input}
                   value={nome}
                   onChangeText={setNome}
-                  placeholder="Ex.: Conta de luz"
+                  placeholder={
+                    tipoModal === "conta"
+                      ? "Ex.: Conta de luz"
+                      : "Ex.: Salário"
+                  }
                   placeholderTextColor="#999"
                   maxLength={70}
                   returnKeyType="next"
@@ -349,7 +663,7 @@ function Financeiro() {
 
                 <Pressable style={s.salvar} onPress={salvar}>
                   <Text style={s.salvarTxt}>
-                    {idEdicao ? "Salvar alterações" : "Adicionar conta"}
+                    {idEdicao ? "Salvar alterações" : "Adicionar"}
                   </Text>
                 </Pressable>
 
@@ -364,7 +678,6 @@ function Financeiro() {
     </SafeAreaView>
   );
 }
-
 export default function App() {
   return (
     <SafeAreaProvider>
@@ -391,7 +704,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 18,
     backgroundColor: "#fff"
   },
-
   header: {
     height: 105,
     flexDirection: "row",
@@ -420,7 +732,6 @@ const s = StyleSheet.create({
     left: 0,
     justifyContent: "center"
   },
-
   fenda: {
     height: 3,
     width: 22,
@@ -455,7 +766,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
-
   cifrao: {
     color: "#fff",
     fontSize: 22,
@@ -488,14 +798,13 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center"
   },
-
   abaAtiva: {
     backgroundColor: "#111"
   },
 
   abaTexto: {
     color: "#777",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700"
   },
 
@@ -516,7 +825,6 @@ const s = StyleSheet.create({
     paddingTop: 5,
     paddingBottom: 10
   },
-
   maisCirculo: {
     width: 68,
     height: 68,
@@ -548,7 +856,6 @@ const s = StyleSheet.create({
     justifyContent: "center",
     padding: 12
   },
-
   rotulo: {
     color: "#c8c8c8",
     fontSize: 13,
@@ -580,7 +887,6 @@ const s = StyleSheet.create({
     borderRadius: 15,
     paddingHorizontal: 12
   },
-
   linha: {
     minHeight: 56,
     flexDirection: "row",
@@ -616,7 +922,6 @@ const s = StyleSheet.create({
     marginLeft: 5,
     marginBottom: 12
   },
-
   finalizar: {
     minHeight: 42,
     borderRadius: 13,
@@ -642,7 +947,6 @@ const s = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end"
   },
-
   modal: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 25,
@@ -675,7 +979,6 @@ const s = StyleSheet.create({
     fontSize: 12,
     marginTop: 4
   },
-
   fechar: {
     width: 36,
     height: 36,
@@ -704,7 +1007,6 @@ const s = StyleSheet.create({
     fontSize: 25,
     fontWeight: "700"
   },
-
   menu: {
     alignSelf: "flex-end",
     borderRadius: 10,
@@ -735,7 +1037,6 @@ const s = StyleSheet.create({
     marginBottom: 8,
     marginTop: 4
   },
-
   input: {
     height: 50,
     borderWidth: 1,
@@ -771,7 +1072,6 @@ const s = StyleSheet.create({
     fontSize: 17,
     paddingVertical: 0
   },
-
   salvar: {
     backgroundColor: "#111",
     height: 52,
@@ -798,6 +1098,115 @@ const s = StyleSheet.create({
     color: "#777",
     fontSize: 14,
     fontWeight: "600"
+  },
+
+  conteudoHistorico: {
+    paddingTop: 12,
+    paddingBottom: 20
+  },
+  subHistorico: {
+    color: "#888",
+    fontSize: 13,
+    marginTop: 5,
+    marginBottom: 18
+  },
+
+  cartaoMes: {
+    borderWidth: 1,
+    borderColor: "#e8e8e8",
+    borderRadius: 16,
+    marginBottom: 12,
+    overflow: "hidden",
+    backgroundColor: "#fff"
+  },
+
+  topMes: {
+    minHeight: 94,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    flexDirection: "row",
+    alignItems: "center"
+  },
+
+  nomeMes: {
+    color: "#171717",
+    fontSize: 17,
+    fontWeight: "800",
+    marginBottom: 6
+  },
+  resumoMes: {
+    color: "#777",
+    fontSize: 12,
+    marginTop: 2
+  },
+
+  setaMes: {
+    color: "#555",
+    fontSize: 25,
+    marginLeft: 10
+  },
+
+  detalheMes: {
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    padding: 15
+  },
+
+  saldoBox: {
+    backgroundColor: "#111",
+    borderRadius: 13,
+    padding: 15,
+    marginBottom: 18
+  },
+
+  rotuloSaldo: {
+    color: "#ccc",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  valorSaldo: {
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "800",
+    marginTop: 5
+  },
+
+  subtituloHistorico: {
+    color: "#222",
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 8,
+    marginTop: 4
+  },
+
+  linhaHistorico: {
+    minHeight: 38,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10
+  },
+
+  nomeHistorico: {
+    color: "#555",
+    fontSize: 13,
+    flex: 1
+  },
+
+  valorHistorico: {
+    color: "#222",
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  semLancamento: {
+    color: "#999",
+    fontSize: 12,
+    marginBottom: 10
+  },
+
+  separadorHistorico: {
+    height: 1,
+    backgroundColor: "#eee",
+    marginVertical: 13
   }
 });
-            
