@@ -1,4 +1,3 @@
-
 {
   "expo": {
     "name": "Meu Financeiro",
@@ -14,6 +13,7 @@
     },
     "android": {
       "package": "com.meufinanceiro.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
