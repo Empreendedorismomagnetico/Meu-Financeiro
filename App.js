@@ -7,7 +7,20 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
+GoogleSignin.configure({
+  webClientId: "553751346640-vfp0n70s2fulr21m9a47amqnvsuqjk4u.apps.googleusercontent.com",
+  offlineAccess: false
+});
+import {
+  GoogleAuthProvider,
+  signInWithCredential,
+  onAuthStateChanged,
+  signOut
+} from "firebase/auth";
+
+import { auth } from "./firebase";
 const KEY = "@meu_financeiro_v1";
 const ABAS = ["Contas", "Receitas", "Resumo", "Cartões", "Dashboard", "Histórico"];
 
@@ -93,7 +106,7 @@ function normalizarHistorico(lista) {
   );
 }
 
-function Financeiro() {
+function Financeiro({ usuario, aoSair }) {
   const [contas, setContas] = useState([]);
   const [receitas, setReceitas] = useState([]);
   const [historico, setHistorico] = useState([]);
@@ -975,9 +988,109 @@ function Gatinho({ feliz }) {
 }
 
 export default function App() {
+  const [usuario, setUsuario] = useState(null);
+  const [carregandoAuth, setCarregandoAuth] = useState(true);
+  const [entrando, setEntrando] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUsuario(user);
+      setCarregandoAuth(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  async function entrarComGoogle() {
+    try {
+      setEntrando(true);
+
+      await GoogleSignin.hasPlayServices();
+
+      const response = await GoogleSignin.signIn();
+
+      if (response.type !== "success") {
+        return;
+      }
+
+      const idToken = response.data.idToken;
+
+      if (!idToken) {
+        throw new Error("Não foi possível obter o token do Google.");
+      }
+
+      const credential = GoogleAuthProvider.credential(idToken);
+
+      await signInWithCredential(auth, credential);
+    } catch (error) {
+      Alert.alert(
+        "Erro no login",
+        error.message || "Não foi possível entrar com Google."
+      );
+    } finally {
+      setEntrando(false);
+    }
+  }
+
+  async function sair() {
+    try {
+      await GoogleSignin.signOut();
+      await signOut(auth);
+    } catch (error) {
+      Alert.alert("Erro", "Não foi possível sair da conta.");
+    }
+  }
+
   return (
     <SafeAreaProvider>
-      <Financeiro />
+      {carregandoAuth ? (
+        <SafeAreaView
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "#fff"
+          }}
+        >
+          <Text>Verificando sessão...</Text>
+        </SafeAreaView>
+      ) : usuario ? (
+        <Financeiro usuario={usuario} aoSair={sair} />
+      ) : (
+        <SafeAreaView
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "#fff",
+            padding: 24
+          }}
+        >
+          <Text style={{ fontSize: 28, fontWeight: "bold", marginBottom: 12 }}>
+            Meu Financeiro
+          </Text>
+
+          <Text style={{ fontSize: 16, marginBottom: 28, color: "#666" }}>
+            Entre com sua conta Google para acessar seus dados.
+          </Text>
+
+          <Pressable
+            onPress={entrarComGoogle}
+            disabled={entrando}
+            style={{
+              backgroundColor: "#2563eb",
+              paddingVertical: 15,
+              paddingHorizontal: 28,
+              borderRadius: 10,
+              opacity: entrando ? 0.6 : 1
+            }}
+          >
+            <Text style={{ color: "#fff", fontSize: 16, fontWeight: "bold" }}>
+              {entrando ? "Entrando..." : "Entrar com Google"}
+            </Text>
+          </Pressable>
+        </SafeAreaView>
+      )}
     </SafeAreaProvider>
   );
 }
