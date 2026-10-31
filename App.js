@@ -844,7 +844,28 @@ useEffect(() => {
           </View>
 
           <Text style={s.logoTexto}>Meu{"\n"}Financeiro</Text>
-        </View>
+       <Pressable
+  onPress={() => Alert.alert(
+    "Sair da conta?",
+    "Seus dados continuarão salvos. Você poderá entrar novamente quando quiser.",
+    [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Sair", style: "destructive", onPress: aoSair }
+    ]
+  )}
+  style={{
+    position: "absolute",
+    right: 0,
+    padding: 10,
+    backgroundColor: "#f1f1f1",
+    borderRadius: 10
+  }}
+>
+  <Text style={{ fontSize: 13, fontWeight: "700", color: "#333" }}>
+    Sair
+  </Text>
+</Pressable>
+          </View>
 
         <View style={s.navegacao}>
           <View style={s.navegacaoConteudo}>
