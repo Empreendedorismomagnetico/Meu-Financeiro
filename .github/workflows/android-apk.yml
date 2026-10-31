@@ -30,7 +30,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-
+      - name: Verificar assinatura Android
+        working-directory: android
+        run: ./gradlew signingReport
       - name: Compilar APK
         working-directory: android
         run: chmod +x gradlew && ./gradlew assembleRelease
