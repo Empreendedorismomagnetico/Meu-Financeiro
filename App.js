@@ -119,7 +119,12 @@ function Financeiro({ usuario, aoSair }) {
   const [historico, setHistorico] = useState([]);
   const [cartoes, setCartoes] = useState([]);
   const [pronto, setPronto] = useState(false);
+const referenciaDados = useMemo(
+  () => doc(db, "usuarios", usuario.uid, "dados", "financeiro"),
+  [usuario.uid]
+);
 
+const ultimaVersaoNuvem = useRef(null);
   const [aba, setAba] = useState(0);
   const [larguraPagina, setLarguraPagina] = useState(0);
   const pagerRef = useRef(null);
@@ -147,34 +152,68 @@ function Financeiro({ usuario, aoSair }) {
   const totalReceitas = useMemo(() => soma(receitas), [receitas]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const salvo = await AsyncStorage.getItem(KEY);
+  const cancelar = onSnapshot(
+    referenciaDados,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const dados = snapshot.data();
 
-        if (salvo) {
-          const dados = JSON.parse(salvo);
+        setContas(Array.isArray(dados.contas) ? dados.contas : []);
+        setReceitas(Array.isArray(dados.receitas) ? dados.receitas : []);
+        setHistorico(normalizarHistorico(dados.historico));
+        setCartoes(Array.isArray(dados.cartoes) ? dados.cartoes : []);
 
-          setContas(Array.isArray(dados.contas) ? dados.contas : []);
-          setReceitas(Array.isArray(dados.receitas) ? dados.receitas : []);
-          setHistorico(normalizarHistorico(dados.historico));
-          setCartoes(Array.isArray(dados.cartoes) ? dados.cartoes : []);
-        }
-      } catch (e) {
-        Alert.alert("Aviso", "Não foi possível carregar os dados salvos.");
-      } finally {
-        setPronto(true);
+        ultimaVersaoNuvem.current = JSON.stringify({
+          contas: Array.isArray(dados.contas) ? dados.contas : [],
+          receitas: Array.isArray(dados.receitas) ? dados.receitas : [],
+          historico: Array.isArray(dados.historico) ? dados.historico : [],
+          cartoes: Array.isArray(dados.cartoes) ? dados.cartoes : []
+        });
+      } else {
+        ultimaVersaoNuvem.current = JSON.stringify({
+          contas: [],
+          receitas: [],
+          historico: [],
+          cartoes: []
+        });
+
+        setContas([]);
+        setReceitas([]);
+        setHistorico([]);
+        setCartoes([]);
       }
-    })();
-  }, []);
 
-  useEffect(() => {
-    if (pronto) {
-      AsyncStorage.setItem(
-        KEY,
-        JSON.stringify({ contas, receitas, historico, cartoes })
-      ).catch(() => Alert.alert("Erro", "Não foi possível salvar os dados."));
+      setPronto(true);
+    },
+    (error) => {
+      Alert.alert("Erro", "Não foi possível carregar os dados da nuvem.");
+      setPronto(true);
     }
-  }, [contas, receitas, historico, cartoes, pronto]);
+  );
+
+  return cancelar;
+}, [referenciaDados]);
+
+useEffect(() => {
+  if (!pronto) return;
+
+  const dados = {
+    contas,
+    receitas,
+    historico,
+    cartoes
+  };
+
+  const versaoAtual = JSON.stringify(dados);
+
+  if (versaoAtual === ultimaVersaoNuvem.current) return;
+
+  ultimaVersaoNuvem.current = versaoAtual;
+
+  setDoc(referenciaDados, dados).catch(() => {
+    Alert.alert("Erro", "Não foi possível salvar os dados na nuvem.");
+  });
+}, [contas, receitas, historico, cartoes, pronto, referenciaDados]);
 
   function navegar(indice) {
     setAba(indice);
