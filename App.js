@@ -21,6 +21,13 @@ import {
 } from "firebase/auth";
 
 import { auth } from "./firebase";
+import {
+  doc,
+  onSnapshot,
+  setDoc
+} from "firebase/firestore";
+
+import { db } from "./firebase";
 const KEY = "@meu_financeiro_v1";
 const ABAS = ["Contas", "Receitas", "Resumo", "Cartões", "Dashboard", "Histórico"];
 
