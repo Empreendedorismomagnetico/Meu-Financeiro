@@ -236,15 +236,15 @@ useEffect(() => {
     setAba(Math.max(0, Math.min(ABAS.length - 1, indice)));
   }
 
-  function novo(tipo) {
-    setMesEdicao(null);
-    setTipoModal(tipo);
-    setIdEdicao(null);
-    setNome(tipo === "cartao" ? `Cartão ${cartoes.length + 1}` : "");
-    setValor("");
-    setValorUtilizado("");
-    setMenu(false);
-    setModal(true);
+  function novo(tipo, mesKey = null) {
+  setMesEdicao(mesKey);
+  setTipoModal(tipo);
+  setIdEdicao(null);
+  setNome(tipo === "cartao" ? `Cartão ${cartoes.length + 1}` : "");
+  setValor("");
+  setValorUtilizado("");
+  setMenu(false);
+  setModal(true);
   }
 
   function editar(item, tipo, mesKey = null) {
@@ -275,45 +275,108 @@ useEffect(() => {
     setMesEdicao(null);
   }
 
-  function salvar() {
-    const n = nome.trim();
-    const v = cents(valor);
-    const ehCartao = tipoModal === "cartao";
-    const ehConta = tipoModal === "conta";
-    const atualizar = ehConta ? setContas : setReceitas;
+  
+function salvar() {
+  const n = nome.trim();
+  const v = cents(valor);
+  const ehCartao = tipoModal === "cartao";
+  const ehConta = tipoModal === "conta";
+  const atualizar = ehConta ? setContas : setReceitas;
 
-    if (!n) return Alert.alert("Falta o nome", "Digite um nome para o lançamento.");
-    if (ehCartao) {
-      if (v <= 0) return Alert.alert("Limite inválido", "Informe um limite maior que zero.");
-      const registro = { id: idEdicao || `${Date.now()}-${Math.random()}`, nome: n, limite: v };
-      setCartoes(lista => idEdicao
-        ? lista.map(item => item.id === idEdicao ? { ...item, ...registro } : item)
-        : [registro, ...lista]);
-      fechar();
-      return;
-    }
-    if (v <= 0) return Alert.alert("Valor inválido", "Informe um valor maior que zero.");
-
-    if (mesEdicao) {
-      const campo = ehConta ? "contas" : "receitas";
-      setHistorico(lista => lista.map(mes => mes.mesKey !== mesEdicao ? mes : ({
-        ...mes,
-        [campo]: (mes[campo] || []).map(item =>
-          item.id === idEdicao ? { ...item, nome: n, valor: v } : item
-        )
-      })));
-    } else if (idEdicao) {
-      atualizar(lista => lista.map(item =>
-        item.id === idEdicao ? { ...item, nome: n, valor: v } : item
-      ));
-    } else {
-      atualizar(lista => [
-        { id: `${Date.now()}-${Math.random()}`, nome: n, valor: v },
-        ...lista
-      ]);
-    }
-    fechar();
+  if (!n) {
+    return Alert.alert("Falta o nome", "Digite um nome para o lançamento.");
   }
+
+  if (ehCartao) {
+    if (v <= 0) {
+      return Alert.alert("Limite inválido", "Informe um limite maior que zero.");
+    }
+
+    const registro = {
+      id: idEdicao || `${Date.now()}-${Math.random()}`,
+      nome: n,
+      limite: v
+    };
+
+    setCartoes(lista => idEdicao
+      ? lista.map(item => item.id === idEdicao ? { ...item, ...registro } : item)
+      : [registro, ...lista]
+    );
+
+    fechar();
+    return;
+  }
+
+  if (v <= 0) {
+    return Alert.alert("Valor inválido", "Informe um valor maior que zero.");
+  }
+
+  if (mesEdicao) {
+    const campo = ehConta ? "contas" : "receitas";
+    const campoFinalizada = ehConta
+      ? "contasFinalizadas"
+      : "receitasFinalizadas";
+
+    setHistorico(lista => {
+      const existente = lista.find(m => m.mesKey === mesEdicao);
+
+      const base = existente || {
+        id: mesEdicao,
+        mesKey: mesEdicao,
+        mesLabel: nomeMes(mesEdicao),
+        contas: [],
+        receitas: [],
+        contasFinalizadas: false,
+        receitasFinalizadas: false
+      };
+
+      const itens = base[campo] || [];
+
+      const atualizados = idEdicao
+        ? itens.map(item =>
+            item.id === idEdicao
+              ? { ...item, nome: n, valor: v }
+              : item
+          )
+        : [
+            {
+              id: `${Date.now()}-${Math.random()}`,
+              nome: n,
+              valor: v
+            },
+            ...itens
+          ];
+
+      const atualizado = {
+        ...base,
+        [campo]: atualizados,
+        [campoFinalizada]: true
+      };
+
+      return [
+        atualizado,
+        ...lista.filter(m => m.mesKey !== mesEdicao)
+      ].sort((a, b) => b.mesKey.localeCompare(a.mesKey));
+    });
+  } else if (idEdicao) {
+    atualizar(lista => lista.map(item =>
+      item.id === idEdicao
+        ? { ...item, nome: n, valor: v }
+        : item
+    ));
+  } else {
+    atualizar(lista => [
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        nome: n,
+        valor: v
+      },
+      ...lista
+    ]);
+  }
+
+  fechar();
+}
 
   function excluir() {
     setMenu(false);
@@ -677,12 +740,36 @@ useEffect(() => {
 
   function renderHistorico() {
     const mesesFiltrados = historico.filter(mes => mes.mesKey === `${anoFiltroHistorico}-${String(mesFiltroHistorico + 1).padStart(2, "0")}`);
+    const chaveMesSelecionado = `${anoFiltroHistorico}-${String(mesFiltroHistorico + 1).padStart(2, "0")}`;
     return (
       <ScrollView style={s.scroll} contentContainerStyle={s.conteudoHistorico} showsVerticalScrollIndicator={false}>
         <Text style={s.tituloLista}>Histórico</Text>
         <Text style={s.subHistorico}>Consulte os lançamentos dos meses finalizados.</Text>
         {renderFiltroMesAno(mesFiltroHistorico, anoFiltroHistorico, setMesFiltroHistorico, setAnoFiltroHistorico)}
-        {historico.length === 0 ? (
+        <View style={{ gap: 8, marginBottom: 16 }}>
+
+  <Pressable
+    style={s.adicionar}
+    onPress={() => novo("conta", chaveMesSelecionado)}
+  >
+    <View style={s.maisCirculo}>
+      <Text style={s.maisTxt}>＋</Text>
+    </View>
+    <Text style={s.adicionarTexto}>Adicionar conta neste mês</Text>
+  </Pressable>
+
+  <Pressable
+    style={s.adicionar}
+    onPress={() => novo("receita", chaveMesSelecionado)}
+  >
+    <View style={s.maisCirculo}>
+      <Text style={s.maisTxt}>＋</Text>
+    </View>
+    <Text style={s.adicionarTexto}>Adicionar receita neste mês</Text>
+  </Pressable>
+
+</View>
+{historico.length === 0 ? (
           <Text style={s.vazioDesc}>Seus lançamentos finalizados aparecerão aqui.</Text>
         ) : mesesFiltrados.length === 0 ? (
           <Text style={s.vazioDesc}>Não há registros para esse mês e ano.</Text>
